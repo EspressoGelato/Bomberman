@@ -157,15 +157,17 @@ def reward_from_events(self, events: List[str]) -> int:
     """
     print('run my_agent/train.py function reward_from_events')
     game_rewards = {
-        e.COIN_COLLECTED: 1,
+        e.COIN_COLLECTED: 3,
         e.KILLED_OPPONENT: 5,
         #PLACEHOLDER_EVENT: -.1  # idea: the custom event is bad
         e.COIN_FOUND: 0.5,
         e.SURVIVED_ROUND: 0.5,
         e.GOT_KILLED: -5,
         e.KILLED_SELF: -5,
-        e.CRATE_DESTROYED: 0.3,
-        e.BOMB_DROPPED: 0.1
+        e.CRATE_DESTROYED: 0.5,
+        e.BOMB_DROPPED: 0.3,
+        e.BOMB_EXPLODED: 0.3,
+        e.INVALID_ACTION: -2
 
     }
     reward_sum = 0
