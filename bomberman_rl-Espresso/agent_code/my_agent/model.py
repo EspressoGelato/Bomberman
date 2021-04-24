@@ -98,7 +98,7 @@ class DQN:
         self.action_size = action_size
 
 
-        self.BATCH_SIZE = 128 #128
+        self.BATCH_SIZE = 32 #128
         self.GAMMA = 0.999
         self.EPS_START = 0.9
         self.EPS_END = 0.05
@@ -126,7 +126,7 @@ class DQN:
 
 
         if len(self.memory) < 5000:
-            print('random choose')
+            #print('random choose')
             return np.random.choice(['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB'], p=[.2, .2, .2, .2, .1, .1])
 
         else:
@@ -238,3 +238,17 @@ class DQN:
         plt.title('training score get')
         plt.savefig('./score_get/score_episode{}.png'.format(episode))
 
+
+    def test_act(self, state_feature):
+
+        print('At test mode, select action max Q_value")')
+        state_feature = torch.from_numpy(state_feature)
+        state_feature = state_feature.unsqueeze(0) # size: (1,5,17,17)
+
+        with torch.no_grad():
+            Q_value = self.policy_net(state_feature)
+            print(Q_value)
+            action_index = Q_value.argmax()
+            ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
+            print(ACTIONS[action_index])
+            return ACTIONS[action_index] # choose the action with max Q_value
