@@ -47,7 +47,7 @@ class ReplayMemory(object):
 class net(nn.Module):
     def __init__(self, input_channels, num_actions):
         super(net, self).__init__()
-
+        print('input_channels',input_channels)
         layers = []
         layers.append(nn.Linear(input_channels, 50))
         layers.append(nn.ReLU())
@@ -57,8 +57,10 @@ class net(nn.Module):
         self.func = nn.Sequential(*layers)
 
     def forward(self, x):
+        print('x', type(x), x.shape)
         if type(x) is np.ndarray:
             x = torch.from_numpy(x)
+        print(x.shape)
         x = x.float()
         output = self.func(x)
         return output
@@ -70,15 +72,14 @@ class DQN:
         self.state_size = state_feature_size
         self.action_size = action_size
 
-
-        self.BATCH_SIZE = 128 #128
+        self.BATCH_SIZE = 32  # 128
         self.GAMMA = 0.999
         self.EPS_START = 0.9
-        self.EPS_END = 0.05
+        self.EPS_END = 0.1
         self.EPS_DECAY = 200
-        self.TARGET_UPDATE = 10
+        self.TARGET_UPDATE = 1000
 
-        self.memory = ReplayMemory(1000)
+        self.memory = ReplayMemory(100000)
 
         self.policy_net = self.initialize()
         self.target_net = self.initialize()
@@ -90,30 +91,37 @@ class DQN:
         self.history_loss = []
 
     def select_action(self, state_feature):
+
         state_feature = state_feature.reshape(-1)
+        state_feature = torch.from_numpy(state_feature) #(5*17*17)
 
-        state_feature = torch.from_numpy(state_feature)
 
-        state_feature = state_feature.unsqueeze(0) # size: (1,5,17,17)
         sample = random.random()
         eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * \
                         math.exp(-1. * self.steps_done / self.EPS_DECAY)
-        self.steps_done += 1
-        if sample > eps_threshold:
-            with torch.no_grad():
-                Q_value = self.policy_net(state_feature)
-                print(Q_value)
-                action_index = Q_value.argmax()
-                ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
-                return ACTIONS[action_index] # choose the action with max Q_value
 
-        else: # random choose
+        if len(self.memory) < 5000:
+            # print('random choose')
             return np.random.choice(['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB'], p=[.2, .2, .2, .2, .1, .1])
+
+        else:
+            self.steps_done += 1
+            if sample > eps_threshold:
+                with torch.no_grad():
+                    Q_value = self.policy_net(state_feature)
+                    print(Q_value)
+                    action_index = Q_value.argmax()
+                    ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
+                    return ACTIONS[action_index]  # choose the action with max Q_value
+
+            else:  # random choose
+                return np.random.choice(['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB'], p=[.2, .2, .2, .2, .1, .1])
 
     def store_memory(self, state, action, next_state, reward):
         if type(state) is np.ndarray:
             state = state.reshape(-1)
             state = torch.from_numpy(state).unsqueeze(0)
+
         action = torch.Tensor([action])
         if type(next_state) is np.ndarray:
             next_state = next_state.reshape(-1)
@@ -126,18 +134,17 @@ class DQN:
         return net(input_channels=self.state_size, num_actions=self.action_size)
 
     def optimize_model(self, episode):
-        if len(self.memory) < self.BATCH_SIZE:
+        if len(self.memory) < 5000:
             return
         transitions = self.memory.sample(self.BATCH_SIZE)
 
         batch = Transition(*zip(*transitions))
-        #print('batch', batch)
-        #print('batch.state', batch.state)
+        # print('batch', batch)
+        # print('batch.state', batch.state)
         non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
                                                 batch.next_state)), dtype=torch.bool)
         non_final_next_states = torch.cat([s for s in batch.next_state
                                            if s is not None])
-
 
         state_batch = torch.cat(batch.state)
         #print('state_batch.shape',state_batch.shape)
@@ -145,15 +152,15 @@ class DQN:
         #print('action_batch.shape', action_batch.shape)
         reward_batch = torch.cat(batch.reward)
         #print('reward_batch.shape', reward_batch.shape)
-        #state_batch.shape torch.Size([10, 5, 17, 17])
-        #action_batch.shape torch.Size([10])
-        #reward_batch.shape torch.Size([10])
+        # state_batch.shape torch.Size([10, 5, 17, 17])
+        # action_batch.shape torch.Size([10])
+        # reward_batch.shape torch.Size([10])
 
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
         # columns of actions taken. These are the actions which would've been taken
         # for each batch state according to policy_net
-        state_action_values = self.policy_net(state_batch) # shape (10,6)
-        #logits_Q = logits_Q[range(mini_BATCH_SIZE), mini_prefix_length.long() - 1, :]
+        state_action_values = self.policy_net(state_batch)  # shape (10,6)
+        # logits_Q = logits_Q[range(mini_BATCH_SIZE), mini_prefix_length.long() - 1, :]
         state_action_values = state_action_values[range(self.BATCH_SIZE), action_batch.long()]
 
         # Compute V(s_{t+1}) for all next states.
@@ -167,7 +174,8 @@ class DQN:
         expected_state_action_values = (next_state_values * self.GAMMA) + reward_batch
 
         # Compute Huber loss
-        loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
+        # loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
+        loss = F.mse_loss(state_action_values, expected_state_action_values.unsqueeze(1))
         if episode % 100 == 0:
             self.history_loss.append(loss.item())
 
@@ -179,20 +187,47 @@ class DQN:
             param.grad.data.clamp_(-1, 1)
         self.optimizer.step()
 
-        #if i_episode % TARGET_UPDATE == 0:
+        # if i_episode % TARGET_UPDATE == 0:
+
     def update_target(self):
         self.target_net.load_state_dict(self.policy_net.state_dict())
-        
+
     def save_model(self, episode):
-        torch.save(self.policy_net.state_dict(), './model_saved/dense_DQN_{}.pt'.format(episode))
+        torch.save(self.policy_net.state_dict(), './model_saved/DQN_{}.pt'.format(episode))
 
     def plot_loss(self, episode):
         steps = len(self.history_loss[10:])
         x = range(steps)
-        #index = range(100, 10)
+        plt.figure()
         plt.plot(x, self.history_loss[10:])
         plt.xlabel('episode', fontsize=18)
         plt.ylabel('loss', fontsize=16)
         plt.title('training loss')
-        plt.savefig('./loss_plot/dense_DQN_loss_episode{}.png'.format(episode))
+        plt.savefig('./loss_plot/mse_loss_episode{}.png'.format(episode))
 
+    def plot_score(self, score, episode):
+        steps = len(score)
+        x = range(steps)
+        plt.figure()
+        plt.plot(x, score)
+        plt.xlabel('episode', fontsize=18)
+        plt.ylabel('score', fontsize=16)
+        plt.title('training score get')
+        plt.savefig('./score_get/score_episode{}.png'.format(episode))
+
+    def test_act(self, state_feature):
+
+        print(state_feature.shape)
+        print('At test mode, select action max Q_value')
+        state_feature = state_feature.reshape(-1)
+
+        state_feature = torch.from_numpy(state_feature)
+
+
+        with torch.no_grad():
+            Q_value = self.policy_net(state_feature)
+            print(Q_value)
+            action_index = Q_value.argmax()
+            ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
+            print(ACTIONS[action_index])
+            return ACTIONS[action_index]  # choose the action with max Q_value
